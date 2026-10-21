@@ -1,6 +1,6 @@
 # VigiClaw
 
-![工作流程图.drawio](README.assets/工作流程图.drawio.png)
+![工作流程图.drawio](assets/工作流程图.drawio.png)
 
 ​	VigiClaw 是一个基于 OpenClaw 的机械臂仿真与控制项目，使用的仿真环境是ManiSkill。用于把Openclaw接入到ManiSkill仿真环境中，然后用自然语言指令控制机械臂完成任务。VigiClaw名称是Vigilant Openclaw的缩写，代表警觉的Openclaw。这个项目也可以使用其他Agent框架如codex。论文名称：**VigiClaw: Action-Triggered State Verification for Robust Long-Horizon Robotic Manipulation**。
 
@@ -139,7 +139,7 @@ python server.py --task OpenclawPickCube --episode_nums 5
 
 就可以看到机械臂完成任务的过程。
 
-![异常检测](README.assets/异常检测.png)
+![异常检测](assets/异常检测.png)
 
 ## 开源协议
 
