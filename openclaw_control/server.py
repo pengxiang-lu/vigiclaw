@@ -23,6 +23,7 @@ from typing import Any
 
 import gymnasium as gym
 import numpy as np
+from openclaw_control.dmp_simulation import tcp_action_from_observation
 import torch
 import csv
 from datetime import datetime
@@ -180,6 +181,7 @@ class SimulationServer:
                 "hand_camera_rgb": self._tensor_to_list(hand_camera["rgb"]) if hand_camera else None,
                 "hand_camera_depth": self._tensor_to_list(hand_camera["depth"]) if hand_camera else None,
                 "current_action": current_action,
+                "tcp_action": tcp_action_from_observation(self.obs, current_action[6]).tolist(),
                 "action_arrived": self.action_arrived,
                 "arrival_message": self.arrival_message,
                 "timestamp": time.time(),
@@ -191,6 +193,7 @@ class SimulationServer:
                 "action_arrived": self.action_arrived,
                 "arrival_message": self.arrival_message,
                 "current_action": current_action,
+                "tcp_action": tcp_action_from_observation(self.obs, current_action[6]).tolist(),
                 "timestamp": time.time(),
             }
         if command_type == "camera_params":

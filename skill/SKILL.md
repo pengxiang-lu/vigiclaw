@@ -54,6 +54,32 @@ uv run python health.py
 
 ​	获取任务说明：uv run python get_task_instruction.py，按照获取的任务的说明完成任务。
 
+### 直接动作与 DMP 动作
+
+`direct_action.py` 发送单个七维动作（原 `action.py`）。`dmp_action.py` 使用
+`skill/weights/` 中的权重生成并逐点发送轨迹，默认起点为实际 TCP 位姿。
+使用 DMP 前先确认所选权重对应当前任务及所需夹爪开合顺序。
+
+```bash
+# 在 skill/scripts 下运行，权重也可传绝对路径
+uv run python dmp_action.py --weights pick_obj_weights.npy
+
+# 修改第一个分段终点与最终终点；XYZ 单位为米，沿用各点原姿态和夹爪状态
+uv run python dmp_action.py --weights pick_obj_weights.npy \
+  --midpoint 0 -0.20 0.05 0.30 --goal -0.10 0.05 0.45
+
+# 多个中间点可重复指定，索引从 0 开始，最后一段终点使用 --goal
+# 只预览生成的轨迹，不发送动作；显式指定起点后无需连接服务端
+uv run python dmp_action.py --weights pick_obj_weights.npy \
+  --start -0.30 0 0.30 --dry-run --save-trajectory /tmp/dmp_preview.npy
+```
+
+`--start`、`--goal` 支持 3 维 XYZ、6 维 XYZ+RPY 或 7 维完整动作。
+`--midpoint` 在这些数值之前加分段索引。`--time-scale 2` 将运动时长加倍。
+夹爪切换时默认保持 0.5 秒；发送失败或终点等待超时即停止。
+服务端须使用更新后的 `server.py`，`/arrival_status` 的 `tcp_action` 返回
+实际 TCP 位姿和当前夹爪指令，`current_action` 仍为上次目标动作。
+
 ### 技能1：看看桌上有什么东西
 
 ```python
@@ -83,16 +109,16 @@ uv run python reset.py
 
 # === 第 2 步：抓取物体 A ===
 # 2.1 移动到物体 A 上方（z+0.2 米安全高度）
-uv run python action.py <Ax> <Ay> <Az+0.2> -3.14 0 <A_yaw> 1.0
+uv run python direct_action.py <Ax> <Ay> <Az+0.2> -3.14 0 <A_yaw> 1.0
 
 # 2.2 下降到物体 A 处
-uv run python action.py <Ax> <Ay> <Az> -3.14 0 <A_yaw> 1.0
+uv run python direct_action.py <Ax> <Ay> <Az> -3.14 0 <A_yaw> 1.0
 
 # 2.3 闭合夹爪
-uv run python action.py <Ax> <Ay> <Az> -3.14 0 <A_yaw> -1.0
+uv run python direct_action.py <Ax> <Ay> <Az> -3.14 0 <A_yaw> -1.0
 # 等待零点几秒，确保物体被抓住
 # 2.4 抬起到安全位置（z+0.2 米）
-uv run python action.py <Ax> <Ay> <Az+0.2> -3.14 0 <A_yaw> -1.0
+uv run python direct_action.py <Ax> <Ay> <Az+0.2> -3.14 0 <A_yaw> -1.0
 ```
 
 ### 技能5：把手上的物体A放到B处
@@ -107,16 +133,16 @@ uv run python action.py <Ax> <Ay> <Az+0.2> -3.14 0 <A_yaw> -1.0
 # === 第 2 步：放下物体到B处 ===
 # 2.1 移动到位姿 B 上方（z+0.2 米安全高度）
 B物体厚度:Bd = 2*Bz
-uv run python action.py <Bx> <By> <Bd+0.2> -3.14 0 <A_yaw> -1.0
+uv run python direct_action.py <Bx> <By> <Bd+0.2> -3.14 0 <A_yaw> -1.0
 
 # 2.2 下降到位姿 B 处
-uv run python action.py <Bx> <By> <Bd+ 0.01> -3.14 0 <A_yaw> -1.0
+uv run python direct_action.py <Bx> <By> <Bd+ 0.01> -3.14 0 <A_yaw> -1.0
 
 # 2.3 松开夹爪
-uv run python action.py <Bx> <By> <Bd + 0.01> -3.14 0 <A_yaw> 1.0
+uv run python direct_action.py <Bx> <By> <Bd + 0.01> -3.14 0 <A_yaw> 1.0
 
 # 2.4 抬起到安全位置（z+0.2 米）
-uv run python action.py <Bx> <By> <Bd+0.2> -3.14 0 <A_yaw> 1.0
+uv run python direct_action.py <Bx> <By> <Bd+0.2> -3.14 0 <A_yaw> 1.0
 
 # 注意：如果是堆叠物体，下降的z是(下面所有的物体的厚度和+0.01)
 ```

@@ -3,7 +3,7 @@
 Robot Action — 发送控制指令到机械臂
 
 用法:
-    python action.py <x> <y> <z> <roll> <pitch> <yaw> <gripper>
+    python direct_action.py <x> <y> <z> <roll> <pitch> <yaw> <gripper>
 
 参数:
     x, y, z      : TCP 位置（米，世界坐标系）
@@ -11,8 +11,8 @@ Robot Action — 发送控制指令到机械臂
     gripper      : 夹爪状态 1.0=打开, 0.0=闭合
 
 示例:
-    python action.py 0.615 0.0 0.5 -3.14 0 0 1.0
-    python action.py '[0.615, 0.0, 0.5, -3.14, 0, 0, 1.0]'
+    python direct_action.py -0.3 0.0 0.5 -3.14 0 0 1.0
+    python direct_action.py '[-0.3, 0.0, 0.5, -3.14, 0, 0, 1.0]'
 """
 
 import requests
