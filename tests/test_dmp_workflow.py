@@ -9,9 +9,10 @@ import numpy as np
 from openclaw_control.dmp_collect_trajectory import TrajectoryRecorder, recording_output
 from openclaw_control.dmp_core import (
     DMP, generate_trajectory, learn_weights, load_recording, load_weights,
-    midpoint_arguments, save_npy,
+    midpoint_arguments, save_npy, add_generation_arguments, TRAJECTORY_DIR,
 )
 from openclaw_control.dmp_simulation import tcp_action_from_observation
+from openclaw_control.dmp_plot import original_trajectory, plot_comparison
 from skill.scripts.dmp_action import RobotClient
 
 
@@ -99,7 +100,8 @@ class DMPWorkflowTests(unittest.TestCase):
         self.assertEqual(recording_output("pick_obj.npz"), recording_output("pick_obj"))
         self.assertEqual(recording_output("pick_obj_trajectory"), recording_output("pick_obj"))
         self.assertEqual(recording_output("pick_obj_trajectory.npz"), recording_output("pick_obj"))
-        self.assertEqual(recording_output("pick_obj").parent.name, "weights")
+        self.assertEqual(recording_output("pick_obj").parent,
+                         Path(__file__).resolve().parents[1] / "openclaw_control" / "trajectory")
         for name in ("", " ", ".", "..", "../pick", "/tmp/pick", "dir\\pick", "pick.npy"):
             with self.assertRaises(argparse.ArgumentTypeError):
                 recording_output(name)
@@ -113,6 +115,23 @@ class DMPWorkflowTests(unittest.TestCase):
             path = recorder.save(Path(directory)/"manual.npz", "OpenclawPickCube")
             segments, _ = load_recording(path)
             self.assertEqual([len(s) for s in segments], [3, 1])
+
+    def test_generation_output_and_recording_lookup(self):
+        import argparse
+        parser = argparse.ArgumentParser()
+        add_generation_arguments(parser)
+        for name in ("generated", "generated.npy"):
+            args = parser.parse_args(["--weights", "pick_weights", "--save-trajectory", name])
+            self.assertEqual(args.save_trajectory, TRAJECTORY_DIR / "generated.npy")
+        with tempfile.TemporaryDirectory() as directory:
+            recorder = TrajectoryRecorder()
+            recorder.start()
+            recorder.append(demo()[0])
+            path = recorder.save(Path(directory) / "lookup_trajectory.npz", "OpenclawPickCube")
+            with patch("openclaw_control.dmp_core.TRAJECTORY_DIR", Path(directory)):
+                segments, frequency = load_recording(path.name)
+            np.testing.assert_array_equal(segments[0], demo()[:1])
+            self.assertEqual(frequency, 50)
 
     def test_invalid_npz_segment_lengths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -129,6 +148,54 @@ class DMPWorkflowTests(unittest.TestCase):
             old = save_npy(Path(directory)/"old.npy", {"segments": self.segments, "n_bfs": 50})
             result = generate_trajectory(load_weights(old))
             self.assertTrue(np.isfinite(result).all())
+
+    def test_plot_uses_recorded_demonstration(self):
+        original, lengths = original_trajectory(self.weights, "pick_weights.npy")
+        np.testing.assert_array_equal(original, np.vstack(self.segments))
+        self.assertEqual(lengths, [101, 101, 101])
+        with tempfile.TemporaryDirectory() as directory:
+            weights_path = Path(directory)/"workflow_fixture_weights.npy"
+            recorder = TrajectoryRecorder()
+            recorder.start()
+            for point in self.segments[0]:
+                recorder.append(point)
+            recording = recorder.save(Path(directory)/"workflow_fixture_trajectory.npz", "OpenclawPickCube")
+            legacy = dict(self.weights)
+            legacy.pop("trajectory")
+            original, lengths = original_trajectory(legacy, weights_path)
+            np.testing.assert_array_equal(original, self.segments[0])
+            recording_dir = Path(directory) / "trajectory"
+            recording_dir.mkdir()
+            recording = recording.rename(recording_dir / recording.name)
+            with patch("openclaw_control.dmp_plot.TRAJECTORY_DIR", recording_dir):
+                original, lengths = original_trajectory(legacy, weights_path)
+            np.testing.assert_array_equal(original, self.segments[0])
+            original, _ = original_trajectory(self.weights, weights_path, recording)
+            np.testing.assert_array_equal(original, self.segments[0])
+            with self.assertRaises(FileNotFoundError):
+                original_trajectory(legacy, Path(directory)/"missing_weights.npy")
+
+    def test_comparison_saves_both_figures(self):
+        original = np.vstack(self.segments)
+        generated = generate_trajectory(self.weights, goal=[.4, .1, .5])
+        with tempfile.TemporaryDirectory() as directory:
+            paths = plot_comparison(original, generated, Path(directory)/"comparison.png", [101]*3)
+            self.assertEqual([p.name for p in paths], ["comparison.png", "comparison_3d.png"])
+            for path in paths:
+                self.assertTrue(path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+                self.assertGreater(path.stat().st_size, 10000)
+
+    def test_comparison_show_only_does_not_save(self):
+        import matplotlib.pyplot as plt
+        from matplotlib.figure import Figure
+        def check_single_window(*args, **kwargs):
+            self.assertEqual(len(plt.get_fignums()), 1)
+        with patch.object(plt, "show", side_effect=check_single_window) as show, patch.object(Figure, "savefig") as save:
+            paths = plot_comparison(self.segments[0], self.segments[0], show=True)
+        self.assertEqual(paths, ())
+        show.assert_called_once_with(block=True)
+        save.assert_not_called()
+        self.assertEqual(plt.get_fignums(), [])
 
     def test_tcp_pose_is_measured_and_uses_xyz_euler(self):
         # q = qx(roll) * qy(pitch) * qz(yaw), matching euler_angles_to_matrix(..., 'XYZ').

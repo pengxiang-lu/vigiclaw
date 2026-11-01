@@ -9,8 +9,9 @@ if __package__ in (None, ""):
 
 from openclaw_control.dmp_core import (
     add_generation_arguments, generate_trajectory, load_weights,
-    midpoint_arguments, positive_float, save_npy,
+    midpoint_arguments, positive_float, resolve_weights, save_npy,
 )
+from openclaw_control.dmp_plot import original_trajectory, plot_comparison
 from openclaw_control.dmp_simulation import Simulation
 
 
@@ -23,6 +24,10 @@ def main():
     parser.add_argument("--gripper-hold", type=positive_float, default=0.5,
                         help="开合夹爪后的保持时间（秒）")
     parser.add_argument("--generate-only", action="store_true", help="仅生成轨迹，不启动仿真")
+    parser.add_argument("--trajectory", type=Path, help="可选：openclaw_control/trajectory 下的原始采集文件名或 .npz/.npy 路径")
+    parser.add_argument("--plot-output", type=Path, help="可选：额外保存对比图的 .png 路径；默认只显示、不保存")
+    parser.add_argument("--show-plot", action="store_true", help="显示对比图窗口（默认行为），关闭所有图窗后继续仿真")
+    parser.add_argument("--no-plot", action="store_true", help="跳过原始轨迹和生成轨迹对比图")
     args = parser.parse_args()
     try:
         data = load_weights(args.weights)
@@ -30,6 +35,12 @@ def main():
                                          midpoint_arguments(args.midpoint), args.time_scale)
         if args.save_trajectory:
             print(f"轨迹已保存: {save_npy(args.save_trajectory, trajectory)}")
+        if not args.no_plot:
+            weights_path = resolve_weights(args.weights)
+            original, lengths = original_trajectory(data, weights_path, args.trajectory)
+            print("请查看轨迹对比图，关闭所有图窗后继续。")
+            for path in plot_comparison(original, trajectory, args.plot_output, lengths, show=True):
+                print(f"对比图已保存: {path}")
     except (OSError, ValueError, KeyError) as exc:
         parser.exit(1, f"错误: {exc}\n")
     print(f"已生成 {len(trajectory)} 个轨迹点，{len(data['segment_weights'])} 段")

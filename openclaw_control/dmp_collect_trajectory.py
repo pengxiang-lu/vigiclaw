@@ -10,7 +10,7 @@ import numpy as np
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from openclaw_control.dmp_core import WEIGHTS_DIR
+from openclaw_control.dmp_core import TRAJECTORY_DIR
 from openclaw_control.dmp_simulation import Simulation, CONTROL_FREQ
 
 STEP_SIZE = 0.01
@@ -18,7 +18,7 @@ ROTATION_STEP = 0.05
 
 
 def recording_output(name):
-    """Resolve a recording name inside the shared weights directory."""
+    """Resolve a recording name inside the trajectory directory."""
     if not name.strip() or name in (".", "..") or "/" in name or "\\" in name:
         raise argparse.ArgumentTypeError("--output 只接受名称，不能包含目录路径")
     path = Path(name)
@@ -27,7 +27,7 @@ def recording_output(name):
     stem = path.stem if path.suffix else name
     if not stem.endswith("_trajectory"):
         stem += "_trajectory"
-    return WEIGHTS_DIR / f"{stem}.npz"
+    return TRAJECTORY_DIR / f"{stem}.npz"
 
 
 class TrajectoryRecorder:
@@ -76,7 +76,7 @@ def main():
     parser.add_argument("--task", default="OpenclawPickCube")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--output", required=True, type=recording_output, metavar="NAME",
-                        help="采集名称，保存到 skill/weights/<名称>_trajectory.npz")
+                        help="采集名称，保存到 openclaw_control/trajectory/<名称>_trajectory.npz")
     args = parser.parse_args()
     # Import only after parsing, so --help works without a desktop/X display.
     from pynput import keyboard

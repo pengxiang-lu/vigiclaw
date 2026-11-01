@@ -71,10 +71,11 @@ uv run python dmp_action.py --weights pick_obj_weights.npy \
 # 多个中间点可重复指定，索引从 0 开始，最后一段终点使用 --goal
 # 只预览生成的轨迹，不发送动作；显式指定起点后无需连接服务端
 uv run python dmp_action.py --weights pick_obj_weights.npy \
-  --start -0.30 0 0.30 --dry-run --save-trajectory /tmp/dmp_preview.npy
+  --start -0.30 0 0.30 --dry-run --save-trajectory dmp_preview.npy
 ```
 
 `--start`、`--goal` 支持 3 维 XYZ、6 维 XYZ+RPY 或 7 维完整动作。
+`--save-trajectory` 只传文件名，轨迹统一保存到项目的 `openclaw_control/trajectory/`，与工作目录无关。
 `--midpoint` 在这些数值之前加分段索引。`--time-scale 2` 将运动时长加倍。
 夹爪切换时默认保持 0.5 秒；发送失败或终点等待超时即停止。
 服务端须使用更新后的 `server.py`，`/arrival_status` 的 `tcp_action` 返回

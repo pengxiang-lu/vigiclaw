@@ -150,39 +150,68 @@ YOLO 分割权重统一存放在 `skill/weights/yolo_seg.pt`，视觉脚本按�
 
 ### 1. 在独立仿真中采集
 
+在项目根目录运行：
+
 ```bash
-uv run python openclaw_control/dmp_collect_trajectory.py \
-  --task OpenclawPickCube --seed 0 \
-  --output pick_obj
+python openclaw_control/dmp_collect_trajectory.py \
+  --task OpenclawPickCube --seed 0 --output pick
 ```
 
-`--output` 必填，只传名称（也可带 `.npz` 后缀），采集文件统一保存为
-`skill/weights/<名称>_trajectory.npz`，不接受目录路径；已带 `_trajectory` 的名称不会重复添加后缀。
-每次按键的位置步长固定为 0.01 米，旋转步长固定为 0.05 弧度。
+采集会自行启动独立仿真，不需要 HTTP 服务。`--output` 必填，只传名称
+（也可带 `.npz` 后缀），目录会在保存时自动创建。上述命令保存到
+`openclaw_control/trajectory/pick_trajectory.npz`，与启动命令的工作目录无关。
+不接受目录路径；已带 `_trajectory` 的名称不会重复添加后缀。同名文件会被覆盖。
 
-数字键 `2/8`、`6/4`、`7/1` 分别控制 XYZ 正/负方向；`9/3`、`U/J`、`I/K`
-控制 Roll、Pitch、Yaw；空格切换夹爪（1 打开，-1 闭合）。
-`Z` 开始或重新录制，`X` 手动分段，`C` 保存并退出，`Esc` 退出。
-录制以 50 Hz 采样实际 TCP 位姿，夹爪开合会自动分段；夹爪值记录控制指令。
-采集与本地回放会自行启动独立仿真，不需要 HTTP 服务。
+操作流程：
+
+1. 等待仿真启动，先熟悉控制并调整好开始位姿；按 `Z` 前不会记录轨迹。
+2. 按 `Z` 开始录制，使用移动、旋转和夹爪按键完成示范。
+3. 夹爪开合时自动分段；需要额外的阶段边界时按 `X` 手动分段。`X` 不会暂停录制。
+4. 动作完成后及时按 `C`，保存轨迹并退出。`Esc` 退出且不保存本次采集；再次按 `Z` 会清空当前记录并重新开始录制，不会重置仿真场景。
+
+| 按键 | 操作 |
+| --- | --- |
+| `2` / `8` | X 正向 / 负向移动 |
+| `6` / `4` | Y 正向 / 负向移动 |
+| `7` / `1` | Z 正向 / 负向移动 |
+| `9` / `3` | Roll 正向 / 负向旋转 |
+| `U` / `J` | Pitch 正向 / 负向旋转 |
+| `I` / `K` | Yaw 正向 / 负向旋转 |
+| 空格 | 切换夹爪开合：1 打开，-1 闭合 |
+| `Z` | 开始 / 清空并重新录制 |
+| `X` | 手动分段，继续录制 |
+| `C` | 保存并退出 |
+| `Esc` | 不保存并退出 |
+
+每次移动按键事件调整目标位置 0.01 米，旋转按键事件调整目标角度 0.05 弧度。
+轨迹记录的是世界坐标系下的实际 TCP 位姿（XYZ 和 Roll、Pitch、Yaw），夹爪记录控制指令。
+
+**采样方式与停顿：** 录制期间每个仿真控制步保存一个轨迹点，控制频率为 50 Hz
+（每步对应 0.02 秒仿真时间），不是只在按键时记录。即使不按键或机械臂已经静止，
+也会持续采样；例如静止 3 秒仿真时间会留下约 150 个相同或接近的点。
+夹爪切换和按 `C` 保存时还会额外记录当前状态。
+当前采集和学习逻辑不自动去重或压缩静止区间，停顿会进入 DMP 学习并影响回放时序。
+因此建议先规划操作，再按 `Z`；录制中尽量减少无意的等待，保留抓取、释放等操作所需的停顿。
 
 ### 2. 学习权重
 
 ```bash
 uv run python openclaw_control/dmp_generate_weight.py \
-  --input skill/weights/pick_obj_trajectory.npz
+  --input pick
 ```
 
-默认去掉输入名称中的 `_trajectory` 后缀，输出 `skill/weights/pick_obj_weights.npy`。`--output other_weights.npy`
-可自定义文件名，目录固定为 `skill/weights/`，与启动命令的工作目录无关。
+`--input pick` 自动读取 `openclaw_control/trajectory/pick_trajectory.npz`，输出 `skill/weights/pick_weights.npy`。
+也支持完整采集文件名或文件路径。输出名称由 `--input` 自动决定：去掉扩展名和末尾的 `_trajectory`，再添加 `_weights.npy`。
+例如 `pick_obj_trajectory.npz` 输出为 `skill/weights/pick_obj_weights.npy`，无需指定 `--output`。
+输出目录固定为 `skill/weights/`，与启动命令的工作目录无关。
 支持新的 `.npz` 采集文件，也兼容旧采集脚本保存的分段字典和普通 `(N, 7)` 的 `.npy` 轨迹。
-新权重保存各段模型参数和采样频率，不重复保存整份示范轨迹。
+新权重保存各段模型参数、采样频率和原始示范轨迹，供回放绘图对比。
 
 ### 3. 在仿真中回放并修改中间点
 
 ```bash
-uv run python openclaw_control/dmp.replay.py \
-  --weights pick_obj_weights.npy --task OpenclawPickCube --seed 0 \
+uv run python openclaw_control/dmp_replay.py \
+  --weights pick --task OpenclawPickCube --seed 0 \
   --midpoint 0 -0.20 0.05 0.30 \
   --goal -0.10 0.05 0.45
 ```
@@ -200,9 +229,19 @@ uv run python openclaw_control/dmp.replay.py \
 `--headless` 无窗口运行。可用下面的命令只生成轨迹，便于检查：
 
 ```bash
-uv run python openclaw_control/dmp.replay.py --weights pick_obj_weights.npy \
-  --generate-only --save-trajectory /tmp/generated.npy
+uv run python openclaw_control/dmp_replay.py --weights pick_obj_weights.npy \
+  --generate-only --save-trajectory generated.npy
 ```
+
+回放默认先用 plot 窗口显示原始示范与生成轨迹对比：
+仅显示三维路径及 XYZ、RPY、夹爪状态的 2×4 总览（Figure 1）。
+关闭图窗后再启动仿真，默认不保存图片。
+横轴为采样点序号，曲线表示计划轨迹，不是仿真中实际执行后的 TCP 轨迹。
+`--generate-only` 同样显示对比图，关闭图窗后退出；
+`--plot-output comparison.png` 可显式额外保存两张图片，`--no-plot` 跳过绘图。
+无图形界面运行时可使用 `--headless --no-plot`。
+旧权重缺少示范数据时会优先在 `openclaw_control/trajectory/` 查找同名 `<名称>_trajectory.npz`，并兼容权重同目录的旧采集文件，
+也可用 `--trajectory openclaw_control/trajectory/<名称>_trajectory.npz` 指定原始采集文件。
 
 ### 4. 通过服务端执行 DMP
 
@@ -214,9 +253,9 @@ uv run python skill/scripts/dmp_action.py --weights pick_obj_weights.npy \
 ```
 
 默认从 `/arrival_status` 返回的实际 `tcp_action` 起步，也可传 `--start`。
-权重参数支持 `skill/weights/` 中的文件名或任意权重文件路径。
+权重参数支持名称（`--weights pick` 自动读取 `skill/weights/pick_weights.npy`）、`skill/weights/` 中的文件名或任意权重文件路径。
 `--dry-run` 只生成不发送，配合显式 `--start` 使用时不需要服务端。
-`--save-trajectory` 保存生成结果，`--server-url` 可修改服务地址。
+`--save-trajectory <文件名>` 将生成结果统一保存到 `openclaw_control/trajectory/`，自动创建目录；`--server-url` 可修改服务地址。
 夹爪切换默认保持 0.5 秒，并等待到位；终点同样等待到位。
 `--gripper-hold` 和 `--arrival-timeout` 可调整保持及超时时间。
 发送目标频率取自权重，实际速度也受服务端处理耗时影响。

@@ -10,6 +10,7 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEIGHTS_DIR = PROJECT_ROOT / "skill" / "weights"
+TRAJECTORY_DIR = PROJECT_ROOT / "openclaw_control" / "trajectory"
 
 
 def positive_float(value):
@@ -53,7 +54,10 @@ def split_gripper(trajectory):
 
 def load_recording(path):
     """Read .npz recordings, legacy .npy dictionaries or plain (N, 7) arrays."""
-    if Path(path).suffix == ".npz":
+    path = Path(path)
+    if path.name == str(path) and (TRAJECTORY_DIR / path).is_file():
+        path = TRAJECTORY_DIR / path
+    if path.suffix == ".npz":
         with np.load(path, allow_pickle=False) as archive:
             data = {key: archive[key] for key in archive.files}
         trajectory = trajectory_array(data["trajectory"])
@@ -161,6 +165,7 @@ def learn_weights(segments, control_freq=50, n_bfs=100, alpha=25):
         "format_version": 2, "n_bfs": n_bfs, "alpha": alpha, "beta": alpha / 4,
         "tau": 1.0, "control_freq": control_frequency(control_freq),
         "segment_n_points": [len(s) for s in segments],
+        "trajectory": np.vstack(segments),
         "segment_weights": [model.to_dict() for model in models],
     }
 
@@ -170,9 +175,16 @@ def resolve_weights(value):
     if path.is_file():
         return path.resolve()
     if path.name == str(path):
-        candidate = WEIGHTS_DIR / (path.name if path.suffix else f"{path.name}.npy")
-        if candidate.is_file():
-            return candidate
+        if path.suffix:
+            names = [path.name]
+        elif path.name.endswith("_weights"):
+            names = [f"{path.name}.npy"]
+        else:
+            names = [f"{path.name}_weights.npy", f"{path.name}.npy"]
+        for name in names:
+            candidate = WEIGHTS_DIR / name
+            if candidate.is_file():
+                return candidate
     raise FileNotFoundError(f"找不到权重文件: {value} (默认目录: {WEIGHTS_DIR})")
 
 
@@ -236,14 +248,25 @@ def generate_trajectory(data, start=None, goal=None, midpoints=None, time_scale=
     return trajectory_array(np.vstack(result))
 
 
+def generated_trajectory_output(name):
+    """Keep generated trajectory files in the project trajectory directory."""
+    if not name.strip() or name in (".", "..") or "/" in name or "\\" in name:
+        raise argparse.ArgumentTypeError("--save-trajectory 只接受文件名，不能包含目录路径")
+    path = Path(name)
+    if path.suffix not in ("", ".npy"):
+        raise argparse.ArgumentTypeError("--save-trajectory 请传名称或 .npy 文件名")
+    return TRAJECTORY_DIR / (name if path.suffix else f"{name}.npy")
+
+
 def add_generation_arguments(parser):
-    parser.add_argument("--weights", required=True, help="权重文件路径或 skill/weights 下的文件名")
+    parser.add_argument("--weights", required=True, help="权重名称（如 pick 自动读取 skill/weights/pick_weights.npy）、文件名或路径")
     parser.add_argument("--start", type=float, nargs="+", help="起点: XYZ / XYZ+RPY / 七维动作")
     parser.add_argument("--goal", type=float, nargs="+", help="终点: XYZ / XYZ+RPY / 七维动作")
     parser.add_argument("--midpoint", action="append", nargs="+", type=float, default=[],
                         metavar="VALUE", help="索引 X Y Z [ROLL PITCH YAW [GRIPPER]]；可重复，索引从 0 开始")
     parser.add_argument("--time-scale", type=positive_float, default=1.0, help="时长倍数；2 表示慢一倍")
-    parser.add_argument("--save-trajectory", type=Path, help="可选：保存生成的 (N,7) .npy 轨迹")
+    parser.add_argument("--save-trajectory", type=generated_trajectory_output, metavar="NAME",
+                        help="可选：生成轨迹文件名，统一保存到 openclaw_control/trajectory/<名称>.npy")
 
 
 def midpoint_arguments(values):

@@ -7,22 +7,22 @@ import sys
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from openclaw_control.dmp_core import WEIGHTS_DIR, learn_weights, load_recording, save_npy, positive_float
+from openclaw_control.dmp_core import TRAJECTORY_DIR, WEIGHTS_DIR, learn_weights, load_recording, save_npy, positive_float
 
 
 def main():
     parser = argparse.ArgumentParser(description="从轨迹学习 DMP，权重保存到 skill/weights")
-    parser.add_argument("--input", required=True, type=Path, help="采集的 .npz 轨迹（兼容旧 .npy）")
-    parser.add_argument("--output", help="权重文件名，默认 <名称>_weights.npy（去掉 _trajectory）；保存在 skill/weights")
+    parser.add_argument("--input", required=True, type=Path, help="采集名称（如 pick），或 .npz/.npy 文件名、路径；名称从 openclaw_control/trajectory 读取")
     parser.add_argument("--n-bfs", type=int, default=100, help="高斯基函数数量，至少 2")
     parser.add_argument("--alpha", type=positive_float, default=25.0)
     args = parser.parse_args()
     try:
         stem = args.input.stem.removesuffix("_trajectory")
-        name = args.output or f"{stem}_weights.npy"
-        if Path(name).name != name:
-            raise ValueError("--output 只接受文件名；权重统一保存到 skill/weights")
-        segments, frequency = load_recording(args.input)
+        name = f"{stem}_weights.npy"
+        input_path = args.input
+        if input_path.name == str(input_path) and not input_path.suffix:
+            input_path = TRAJECTORY_DIR / f"{stem}_trajectory.npz"
+        segments, frequency = load_recording(input_path)
         data = learn_weights(segments, frequency, args.n_bfs, args.alpha)
         output = save_npy(WEIGHTS_DIR / name, data)
     except (ValueError, OSError, KeyError) as exc:
