@@ -1,5 +1,7 @@
 # VigiClaw
 
+## 简介
+
 ![工作流程图.drawio](assets/工作流程图.drawio.png)
 
 ​	VigiClaw 是一个基于 OpenClaw 的机械臂仿真与控制项目，使用的仿真环境是ManiSkill。用于把Openclaw接入到ManiSkill仿真环境中，然后用自然语言指令控制机械臂完成任务。VigiClaw名称是Vigilant Openclaw的缩写，代表警觉的Openclaw。这个项目也可以使用其他Agent框架如codex。论文名称：**VigiClaw: Action-Triggered State Verification for Robust Long-Horizon Robotic Manipulation**。
@@ -127,9 +129,11 @@ python server.py --task OpenclawPickCube --episode_nums 5
 
 然后启动OpenClaw或其他Agent框架,先输入：
 
+```bash
+请学习一下 绝对地址。	
 ```
-请学习一下 根目录地址/skill。
-```
+
+这里的绝对地址就是工程目录下的skill文件夹，可以选择skill-dmp或者skill-direct，这两个技能的区别主要在action，skill-direct直接给关键点控制，skill-dmp会使用先前学习到的示教参数生成连续轨迹。
 
 然后输入：
 

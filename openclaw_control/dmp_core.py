@@ -125,26 +125,48 @@ class DMP:
 
     def generate(self, n_steps, start, goal):
         n_steps = max(2, int(n_steps))
-        start, goal = np.asarray(start, dtype=float), np.asarray(goal, dtype=float)
+        start = np.asarray(start, dtype=float)
+        goal = np.array(goal, dtype=float, copy=True)
+        goal[3:6] = start[3:6] + (goal[3:6] - start[3:6] + np.pi) % (2 * np.pi) - np.pi
         scale = goal[:6] - start[:6]
         learned_delta = self.goal[:6] - self.start[:6]
         scale[np.abs(learned_delta) < 1e-4] = self.scale[np.abs(learned_delta) < 1e-4]
+        # A nearly zero demonstrated rotation must not amplify angular noise.
+        # Inspect its reconstructed excursion too, so intentional rotation loops
+        # with equal start/end angles remain DMP motions rather than being erased.
+        angular_tolerance = 0.01  # radians, approximately 0.57 degrees
+        small_rotation = np.abs(learned_delta[3:6]) < angular_tolerance
+        angular_scale = scale[3:6]
+        angular_scale[small_rotation] = self.scale[3:6][small_rotation]
         # Integrate at a fixed fine resolution, even for very short segments.
         internal_steps = max(501, n_steps)
         t = np.linspace(0, 1, internal_steps)
-        forces = self.basis(t) @ self.weights * scale
-        y, velocity = start[:6].copy(), np.zeros(6)
-        generated = np.empty((internal_steps, 6))
-        generated[0] = y
-        dt = t[1] - t[0]
-        for i in range(1, internal_steps):
-            acceleration = self.alpha * (self.beta * (goal[:6] - y) - velocity) + forces[i-1]
-            velocity += acceleration * dt
-            y += velocity * dt
-            generated[i] = y
-        # Remove terminal integration error smoothly instead of snapping the last point.
+        basis_forces = self.basis(t) @ self.weights
         blend = (3 * t**2 - 2 * t**3)[:, None]
-        generated += blend * (goal[:6] - generated[-1])
+        dt = t[1] - t[0]
+
+        def integrate(initial, target, forces):
+            y, velocity = initial.copy(), np.zeros(6)
+            values = np.empty((internal_steps, 6))
+            values[0] = y
+            for i in range(1, internal_steps):
+                acceleration = self.alpha * (self.beta * (target - y) - velocity) + forces[i-1]
+                velocity += acceleration * dt
+                y += velocity * dt
+                values[i] = y
+            # Correct terminal integration error without snapping the last point.
+            values += blend * (target - values[-1])
+            return values
+
+        generated = integrate(start[:6], goal[:6], basis_forces * scale)
+        if np.any(small_rotation):
+            reference = integrate(self.start[:6], self.goal[:6], basis_forces * self.scale)
+            nearly_fixed = small_rotation & (np.ptp(reference[:, 3:6], axis=0) < angular_tolerance)
+            # Smoothly move nearly fixed demonstrated angles to their new goals,
+            # without scaling their jitter. Equal endpoints stay exactly fixed.
+            smooth = 10 * t**3 - 15 * t**4 + 6 * t**5
+            for dim in np.flatnonzero(nearly_fixed) + 3:
+                generated[:, dim] = start[dim] + smooth * (goal[dim] - start[dim])
         result = np.empty((n_steps, 7))
         for d in range(6):
             result[:, d] = np.interp(np.linspace(0, 1, n_steps), t, generated[:, d])

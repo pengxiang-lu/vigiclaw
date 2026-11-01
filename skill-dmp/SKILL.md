@@ -1,6 +1,6 @@
 ---
 name: skill-dmp
-description: 使用已有 DMP 权重生成轨迹，并通过 HTTP API 在 ManiSkill 中执行机械臂操作；支持依据物体位置修改分段终点和目标点。直接发送单步 TCP 目标、不使用 DMP 的任务使用 skill-direct。
+description: 通过现有 HTTP 脚本感知 ManiSkill 场景，使用已有 DMP 权重生成并执行机械臂抓取和放置轨迹。不使用 DMP 的单步目标位姿控制使用 skill-direct。
 ---
 
 # 机械臂 DMP 控制
@@ -55,56 +55,136 @@ uv run python health.py
 | 上   | z 轴 | +z     |
 | 下   | z 轴 | -z     |
 
-## DMP 操作流程
+## 🎯 标准工作流
 
-动作脚本为本 skill 的 `scripts/dmp_action.py`，DMP 权重存放在 `weights/`。
-视觉分割权重位于 `assets/yolo_seg.pt`。本 skill 在 VigiClaw 项目中使用，
-动作脚本依赖项目的 `openclaw_control/dmp_core.py`，保留两者的相对目录关系。
-下面的命令在 `skill-dmp/scripts/` 下运行。
+​	获取任务说明：uv run python get_task_instruction.py，按照获取的任务的说明完成任务。
 
-1. 运行 `uv run python health.py` 检查服务。未运行时提醒用户手动启动服务。
-2. 用 `uv run python get_task_instruction.py` 获取任务说明；按需使用视觉脚本识别目标及世界坐标。
-3. 从本 skill 的 `weights/` 中选择对应操作的已有权重，确认其示范任务、轨迹段和夹爪顺序匹配当前任务。权重文件名本身不保证适配任意物体或任务。
-4. 依据目标位置设置 `--midpoint` 和 `--goal`，用 `dmp_action.py` 生成并发送轨迹。没有适用权重时说明缺少的示范，不用直接动作替代 DMP 操作。
-5. 执行后重新观察场景，检查抓取或放置结果，再继续下一项操作。
+### DMP 动作
 
-### 感知与环境脚本
+动作统一通过 `dmp_action.py`，使用本 skill 的 `weights/` 中的 DMP 权重生成并逐点发送轨迹。
+`--weights pick`、`--weights place`、`--weights push` 分别读取 `pick_weights.npy`、`place_weights.npy`、`push_weights.npy`；
+使用前确认示范动作、分段边界和夹爪顺序适用于当前任务。视觉权重位于本 skill 的 `assets/yolo_seg.pt`。
+动作脚本依赖项目的 `openclaw_control/dmp_core.py`，需保留项目目录关系。
+
+默认起点为服务端实际 TCP 位姿，服务端须提供 `/arrival_status` 的 `tcp_action`。
+`--midpoint` 设置分段终点，索引从 0 开始；N 段轨迹的中间点索引为 `0..N-2`，
+最终终点使用 `--goal`。两者均支持 XYZ、XYZ+RPY 或完整七维动作，中间点需先写索引。
+只传 XYZ 时保留相应示范端点的姿态和夹爪状态。夹爪按权重中的分段顺序切换，
+切换时默认等待 0.5 秒并等待到达；发送失败或等待超时后停止发送。
+`--time-scale 2` 将运动时长加倍；`--dry-run` 只生成不发送，显式提供 `--start` 时无需服务端。
+`--save-trajectory` 只传文件名，结果保存到项目的 `openclaw_control/trajectory/`。
+
+下方动作命令中的 `<...>` 为占位符，执行前应代入实际数值并计算高度。
+
+### 技能1：看看桌上有什么东西
+
+```python
+~/anaconda3/bin/conda run -n yolo26 python object_detect.py
+```
+
+### 技能2：获取物体世界坐标
+
+```python
+# 获取物体世界坐标
+~/anaconda3/bin/conda run -n yolo26 python get_object_pose.py
+```
+
+### 技能3：重置环境
 
 ```bash
-uv run python get_task_instruction.py
-~/anaconda3/bin/conda run -n yolo26 python object_detect.py
-~/anaconda3/bin/conda run -n yolo26 python get_object_pose.py
-uv run python get_rgb_image.py --help
 uv run python reset.py
 ```
 
-`reset.py` 会重置场景，仅在任务需要重新开始时运行。
+### 技能4：抓取物体 A
 
-### 生成并执行 DMP 轨迹
+获取物体 A 的世界坐标 `[Ax, Ay, Az, roll, pitch, A_yaw]`：
 
 ```bash
-# pick 自动定位 skill-dmp/weights/pick_weights.npy
-uv run python dmp_action.py --weights pick
-
-# 修改第一段终点和最终目标；XYZ 单位为米
-uv run python dmp_action.py --weights pick \
-  --midpoint 0 -0.20 0.05 0.30 --goal -0.10 0.05 0.45
-
-# 只生成、不发送；显式指定起点时无需连接服务端
-uv run python dmp_action.py --weights pick \
-  --start -0.30 0 0.30 --dry-run --save-trajectory dmp_preview.npy
+~/anaconda3/bin/conda run -n yolo26 python get_object_pose.py
 ```
 
-权重参数可传操作名称、完整文件名或权重文件路径。默认从服务端实际 TCP 位姿开始，
-不会先移动到示范起点；指定起点后会先到达该起点再执行。
-`--start`、`--goal` 支持 XYZ、XYZ+RPY 或完整七维动作；只指定 XYZ 时保留相应姿态和夹爪状态。
-`--midpoint` 格式为 `索引 X Y Z [ROLL PITCH YAW [GRIPPER]]`，可重复指定。
-若有 N 段轨迹，可修改的中间点索引为 `0..N-2`，最后一段终点用 `--goal`；
-不指定的中间点沿用示范值。不能仅根据物体坐标猜测某个分段的语义。
+`--midpoint 0` 的 XYZ 使用物体坐标 `[Ax, Ay, Az]`，夹爪张开；
+`--goal` 使用物体上方的坐标 `[Ax, Ay, Az+0.2]`，夹爪闭合。
+姿态统一使用 `roll=-3.14`、`pitch=0`、`yaw=A_yaw`。
 
-`--time-scale 2` 将运动时长加倍。夹爪在段内保持不变，分段边界按权重中的顺序切换；
-夹爪切换默认保持 0.5 秒，并等待到达后继续。发送失败或到达超时后停止发送。
-服务端须提供 `/arrival_status` 的 `tcp_action` 字段，表示实际 TCP 位姿和夹爪指令。
-`--save-trajectory` 只传文件名，输出统一保存到项目的 `openclaw_control/trajectory/`。
-采集和权重学习使用项目的 `dmp_collect_trajectory.py`、`dmp_generate_weight.py`，
-不在执行任务时改写动作脚本或临时生成代码。
+```bash
+uv run python dmp_action.py --weights pick \
+  --midpoint 0 <Ax> <Ay> <Az> -3.14 0 <A_yaw> 1.0 \
+  --goal <Ax> <Ay> <Az+0.2> -3.14 0 <A_yaw> -1.0
+```
+
+### 技能5：把手上的物体A放到B处
+
+获取目标 B 的世界坐标，并根据任务确定放置高度 `Zplace`：
+
+```bash
+~/anaconda3/bin/conda run -n yolo26 python get_object_pose.py
+```
+
+`--midpoint 0` 的 XYZ 使用放置坐标 `[Bx, By, Zplace]`，夹爪闭合；
+`--goal` 使用放置点上方的坐标 `[Bx, By, Zplace+0.2]`，夹爪张开。
+`Zplace` 为 TCP 放置高度，需根据支撑面高度和当前抓持位置确定，不能直接使用 B 的中心高度。
+姿态统一使用 `roll=-3.14`、`pitch=0`，yaw 沿用手中物体 A 的 `A_yaw`。
+
+```bash
+uv run python dmp_action.py --weights place \
+  --midpoint 0 <Bx> <By> <Zplace> -3.14 0 <A_yaw> -1.0 \
+  --goal <Bx> <By> <Zplace+0.2> -3.14 0 <A_yaw> 1.0
+```
+
+### 技能6：推动方块
+
+获取方块 A 的世界坐标 `[Ax, Ay, Az]` 和尺寸：
+
+```bash
+~/anaconda3/bin/conda run -n yolo26 python get_object_pose.py
+```
+
+`--midpoint 0` 使用方块背向推动方向一侧的 TCP 接触坐标；
+`--midpoint 1` 使用接触点沿推动方向移动 `L` 后的坐标；
+`--goal` 使用推动终点上方 0.2 米的坐标。推动时夹爪保持闭合。
+
+下方模板中，`L > 0` 为推动距离，`d > 0` 为方块中心到 TCP 接触点的水平距离，
+需根据方块沿推动方向的半宽及夹爪几何确定；`H` 为 TCP 接触高度。
+执行前计算 `<...>` 中的表达式并替换为数值。
+
+#### 向前推动（+X）
+
+```bash
+uv run python dmp_action.py --weights push \
+  --midpoint 0 <Ax-d> <Ay> <H> -3.14 0 0 -1.0 \
+  --midpoint 1 <Ax-d+L> <Ay> <H> -3.14 0 0 -1.0 \
+  --goal <Ax-d+L> <Ay> <H+0.2> -3.14 0 0 -1.0
+```
+
+#### 向后推动（-X）
+
+```bash
+uv run python dmp_action.py --weights push \
+  --midpoint 0 <Ax+d> <Ay> <H> -3.14 0 3.14159 -1.0 \
+  --midpoint 1 <Ax+d-L> <Ay> <H> -3.14 0 3.14159 -1.0 \
+  --goal <Ax+d-L> <Ay> <H+0.2> -3.14 0 3.14159 -1.0
+```
+
+#### 向左推动（+Y）
+
+```bash
+uv run python dmp_action.py --weights push \
+  --midpoint 0 <Ax> <Ay-d> <H> -3.14 0 1.57080 -1.0 \
+  --midpoint 1 <Ax> <Ay-d+L> <H> -3.14 0 1.57080 -1.0 \
+  --goal <Ax> <Ay-d+L> <H+0.2> -3.14 0 1.57080 -1.0
+```
+
+#### 向右推动（-Y）
+
+```bash
+uv run python dmp_action.py --weights push \
+  --midpoint 0 <Ax> <Ay+d> <H> -3.14 0 -1.57080 -1.0 \
+  --midpoint 1 <Ax> <Ay+d-L> <H> -3.14 0 -1.57080 -1.0 \
+  --goal <Ax> <Ay+d-L> <H+0.2> -3.14 0 -1.57080 -1.0
+```
+
+yaw 以当前 +X 推动示范的 `yaw=0` 为基准设置。当前 `push` 权重来自 +X 示范，
+以上模板设置的是各段终点，不会把整条轨迹刚性旋转；其他方向执行前应预览生成路径，
+确认接近及推动段适用。可用 `--dry-run` 生成而不发送，或通过 `dmp_replay.py` 查看轨迹对比图。
+推动后重新获取方块坐标，检查实际位置是否达到目标。

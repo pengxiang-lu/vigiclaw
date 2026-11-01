@@ -46,6 +46,40 @@ class DMPWorkflowTests(unittest.TestCase):
         self.assertGreater(result[:, 0].max(), .09)
         self.assertLess(np.max(np.abs(result-original)), .01)
 
+    def test_nearly_fixed_angles_do_not_amplify_jitter(self):
+        original = demo()
+        t = np.linspace(0, 1, len(original))
+        original[:, 3:6] += (.00027*t + .002*np.sin(6*np.pi*t))[:, None]
+        model = DMP().learn(original)
+        start, goal = model.start.copy(), model.goal.copy()
+        goal[3:6] = [-3.0, .3, 2.303]
+        result = model.generate(len(original), start, goal)
+        np.testing.assert_allclose(result[[0, -1], 3:6], [start[3:6], goal[3:6]])
+        self.assertTrue(np.all(np.diff(result[:, 3:6], axis=0) >= -1e-12))
+        np.testing.assert_array_equal(result[:, 6], start[6])
+        held = model.generate(len(original), start, start)
+        np.testing.assert_allclose(held[:, 3:6], np.tile(start[3:6], (len(held), 1)))
+
+    def test_nearly_fixed_angle_uses_shortest_wrap(self):
+        original = demo()
+        original[:, 5] = 3.13 + np.linspace(0, .00027, len(original))
+        model = DMP().learn(original)
+        goal = model.goal.copy()
+        goal[5] = -3.13
+        result = model.generate(len(original), model.start, goal)
+        self.assertTrue(np.all(np.diff(result[:, 5]) >= 0))
+        np.testing.assert_allclose(result[-1, 5], -3.13 + 2*np.pi)
+        self.assertLess(np.ptp(result[:, 5]), .024)
+        self.assertEqual(goal[5], -3.13)
+
+    def test_zero_displacement_preserves_intentional_rotation(self):
+        original = demo()
+        original[:, 5] = .3*np.sin(np.linspace(0, np.pi, len(original)))
+        model = DMP().learn(original)
+        result = model.generate(len(original), model.start, model.goal)
+        self.assertGreater(result[:, 5].max(), .29)
+        self.assertLess(np.max(np.abs(result[:, 5] - original[:, 5])), .03)
+
     def test_midpoint_goal_and_live_start(self):
         start = [-.2, .03, .4, -3.14, 0, 0, -1]
         result = generate_trajectory(self.weights, start, [.4, -.1, .5], {0: [.05, .08, .45]})
