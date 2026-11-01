@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-WEIGHTS_DIR = PROJECT_ROOT / "skill" / "weights"
+WEIGHTS_DIR = PROJECT_ROOT / "skill-dmp" / "weights"
 TRAJECTORY_DIR = PROJECT_ROOT / "openclaw_control" / "trajectory"
 
 
@@ -259,7 +259,7 @@ def generated_trajectory_output(name):
 
 
 def add_generation_arguments(parser):
-    parser.add_argument("--weights", required=True, help="权重名称（如 pick 自动读取 skill/weights/pick_weights.npy）、文件名或路径")
+    parser.add_argument("--weights", required=True, help="权重名称（如 pick 自动读取 skill-dmp/weights/pick_weights.npy）、文件名或路径")
     parser.add_argument("--start", type=float, nargs="+", help="起点: XYZ / XYZ+RPY / 七维动作")
     parser.add_argument("--goal", type=float, nargs="+", help="终点: XYZ / XYZ+RPY / 七维动作")
     parser.add_argument("--midpoint", action="append", nargs="+", type=float, default=[],

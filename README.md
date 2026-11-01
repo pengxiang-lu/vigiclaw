@@ -62,7 +62,7 @@ pip install requests numpy Pillow opencv-python ultralytics
 
 ```bash
 conda activate yolo26
-cd skill/scripts
+cd skill-direct/scripts
 conda run -n yolo26 python object_detect.py
 ```
 
@@ -143,9 +143,17 @@ python server.py --task OpenclawPickCube --episode_nums 5
 
 ## DMP 轨迹采集、学习与执行
 
-整理后的脚本位于 `openclaw_control/`，动作脚本位于 `skill/scripts/`。
+采集、权重学习和本地回放脚本位于 `openclaw_control/`。执行任务时分为两个 skill：
+
+| skill 目录 | 动作脚本 | 权重资源 |
+| --- | --- | --- |
+| `skill-direct/` | `scripts/direct_action.py`，直接发送单步 TCP 目标 | `assets/yolo_seg.pt`，用于视觉感知 |
+| `skill-dmp/` | `scripts/dmp_action.py`，由 DMP 权重生成并执行轨迹 | `weights/*_weights.npy`，用于 DMP；`assets/yolo_seg.pt` 用于视觉感知 |
+
+两个目录各有独立的 `SKILL.md`，并包含感知、健康检查、任务查询和重置脚本。
+原 `skill/` 已拆分；根据是否使用 DMP 选择对应 skill。
 旧 `openclaw_control/dmp/` 已移除，新脚本共用 `dmp_core.py` 中的 DMP 逻辑。
-YOLO 分割权重统一存放在 `skill/weights/yolo_seg.pt`，视觉脚本按自身路径定位权重。
+YOLO 分割权重放在各 skill 的 `assets/yolo_seg.pt`，视觉脚本按自身路径定位资源。
 下面的命令在项目根目录运行。
 
 ### 1. 在独立仿真中采集
@@ -200,10 +208,10 @@ uv run python openclaw_control/dmp_generate_weight.py \
   --input pick
 ```
 
-`--input pick` 自动读取 `openclaw_control/trajectory/pick_trajectory.npz`，输出 `skill/weights/pick_weights.npy`。
+`--input pick` 自动读取 `openclaw_control/trajectory/pick_trajectory.npz`，输出 `skill-dmp/weights/pick_weights.npy`。
 也支持完整采集文件名或文件路径。输出名称由 `--input` 自动决定：去掉扩展名和末尾的 `_trajectory`，再添加 `_weights.npy`。
-例如 `pick_obj_trajectory.npz` 输出为 `skill/weights/pick_obj_weights.npy`，无需指定 `--output`。
-输出目录固定为 `skill/weights/`，与启动命令的工作目录无关。
+例如 `pick_obj_trajectory.npz` 输出为 `skill-dmp/weights/pick_obj_weights.npy`，无需指定 `--output`。
+输出目录固定为 `skill-dmp/weights/`，与启动命令的工作目录无关。
 支持新的 `.npz` 采集文件，也兼容旧采集脚本保存的分段字典和普通 `(N, 7)` 的 `.npy` 轨迹。
 新权重保存各段模型参数、采样频率和原始示范轨迹，供回放绘图对比。
 
@@ -248,12 +256,12 @@ uv run python openclaw_control/dmp_replay.py --weights pick_obj_weights.npy \
 先启动更新后的服务端，再运行：
 
 ```bash
-uv run python skill/scripts/dmp_action.py --weights pick_obj_weights.npy \
+uv run python skill-dmp/scripts/dmp_action.py --weights pick_obj_weights.npy \
   --midpoint 0 -0.20 0.05 0.30 --goal -0.10 0.05 0.45
 ```
 
 默认从 `/arrival_status` 返回的实际 `tcp_action` 起步，也可传 `--start`。
-权重参数支持名称（`--weights pick` 自动读取 `skill/weights/pick_weights.npy`）、`skill/weights/` 中的文件名或任意权重文件路径。
+权重参数支持名称（`--weights pick` 自动读取 `skill-dmp/weights/pick_weights.npy`）、`skill-dmp/weights/` 中的文件名或任意权重文件路径。
 `--dry-run` 只生成不发送，配合显式 `--start` 使用时不需要服务端。
 `--save-trajectory <文件名>` 将生成结果统一保存到 `openclaw_control/trajectory/`，自动创建目录；`--server-url` 可修改服务地址。
 夹爪切换默认保持 0.5 秒，并等待到位；终点同样等待到位。
@@ -264,7 +272,7 @@ uv run python skill/scripts/dmp_action.py --weights pick_obj_weights.npy \
 原单点动作脚本已更名为 `direct_action.py`：
 
 ```bash
-uv run python skill/scripts/direct_action.py -0.30 0 0.30 -3.14 0 0 1
+uv run python skill-direct/scripts/direct_action.py -0.30 0 0.30 -3.14 0 0 1
 ```
 
 更新后的服务端在 `/state` 和 `/arrival_status` 中新增 `tcp_action`，

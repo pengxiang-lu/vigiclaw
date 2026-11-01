@@ -13,7 +13,10 @@ from openclaw_control.dmp_core import (
 )
 from openclaw_control.dmp_simulation import tcp_action_from_observation
 from openclaw_control.dmp_plot import original_trajectory, plot_comparison
-from skill.scripts.dmp_action import RobotClient
+from importlib import import_module
+
+dmp_action = import_module("skill-dmp.scripts.dmp_action")
+RobotClient = dmp_action.RobotClient
 
 
 def demo(gripper=1, x=0):
@@ -229,7 +232,7 @@ class HTTPExecutionTests(unittest.TestCase):
             client.execute(demo()[:3], 50)
         self.assertEqual(session.request.call_count, 1)
 
-    @patch("skill.scripts.dmp_action.time.sleep")
+    @patch.object(dmp_action.time, "sleep")
     def test_gripper_transition_is_held_and_waited(self, sleep):
         client = RobotClient()
         client.request = Mock(return_value={"action_arrived": True})
@@ -241,7 +244,7 @@ class HTTPExecutionTests(unittest.TestCase):
         self.assertEqual(sum(c.args[0] == "GET" for c in calls), 2)
         sleep.assert_any_call(.5)
 
-    @patch("skill.scripts.dmp_action.time.sleep")
+    @patch.object(dmp_action.time, "sleep")
     def test_arrival_timeout(self, sleep):
         client = RobotClient()
         client.request = Mock(return_value={"action_arrived": False})

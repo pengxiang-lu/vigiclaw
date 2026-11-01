@@ -1,4 +1,9 @@
-# Robot Control Skill - 机械臂控制
+---
+name: skill-direct
+description: 通过现有 HTTP 脚本感知 ManiSkill 场景并发送单步 TCP 目标位姿，完成不使用 DMP 轨迹的机械臂抓取和放置任务。需要按已学习的 DMP 权重执行轨迹时使用 skill-dmp。
+---
+
+# 机械臂直接控制
 
 控制 ManiSkill-3 机械臂仿真环境，通过 HTTP API 与仿真服务端交互。
 
@@ -14,7 +19,7 @@
 ### 前置检查
 ```bash
 # 检查仿真服务端是否运行
-cd skill/scripts
+cd skill-direct/scripts
 uv run python health.py
 ```
 如果仿真服务端未运行，**提醒用户手动启动**，不要私自启动。
@@ -33,7 +38,7 @@ uv run python health.py
 | `roll` | **-3.14** | 固定值 |
 | `pitch` | **0** | 固定值 |
 | `yaw` | 物体 yaw 值 | 可变值 |
-| `gripper` | 1.0/0.0 | 1.0=打开，-1.0=闭合 |
+| `gripper` | 1.0/-1.0 | 1.0=打开，-1.0=闭合 |
 
 > ⚠️ **关键约束**: `roll` 全程保持 `-3.14`，`pitch` 全程保持 `0`
 
@@ -54,32 +59,11 @@ uv run python health.py
 
 ​	获取任务说明：uv run python get_task_instruction.py，按照获取的任务的说明完成任务。
 
-### 直接动作与 DMP 动作
+### 直接动作
 
-`direct_action.py` 发送单个七维动作（原 `action.py`）。`dmp_action.py` 使用
-`skill/weights/` 中的权重生成并逐点发送轨迹，默认起点为实际 TCP 位姿。
-使用 DMP 前先确认所选权重对应当前任务及所需夹爪开合顺序。
-
-```bash
-# 在 skill/scripts 下运行，权重也可传绝对路径
-uv run python dmp_action.py --weights pick_obj_weights.npy
-
-# 修改第一个分段终点与最终终点；XYZ 单位为米，沿用各点原姿态和夹爪状态
-uv run python dmp_action.py --weights pick_obj_weights.npy \
-  --midpoint 0 -0.20 0.05 0.30 --goal -0.10 0.05 0.45
-
-# 多个中间点可重复指定，索引从 0 开始，最后一段终点使用 --goal
-# 只预览生成的轨迹，不发送动作；显式指定起点后无需连接服务端
-uv run python dmp_action.py --weights pick_obj_weights.npy \
-  --start -0.30 0 0.30 --dry-run --save-trajectory dmp_preview.npy
-```
-
-`--start`、`--goal` 支持 3 维 XYZ、6 维 XYZ+RPY 或 7 维完整动作。
-`--save-trajectory` 只传文件名，轨迹统一保存到项目的 `openclaw_control/trajectory/`，与工作目录无关。
-`--midpoint` 在这些数值之前加分段索引。`--time-scale 2` 将运动时长加倍。
-夹爪切换时默认保持 0.5 秒；发送失败或终点等待超时即停止。
-服务端须使用更新后的 `server.py`，`/arrival_status` 的 `tcp_action` 返回
-实际 TCP 位姿和当前夹爪指令，`current_action` 仍为上次目标动作。
+动作统一通过 `direct_action.py` 发送单个七维目标位姿，由服务端控制机械臂到达。
+本 skill 不使用 DMP 权重，也不生成 DMP 操作轨迹；需要按已学习的轨迹执行时使用 `skill-dmp`。
+视觉权重位于本 skill 的 `assets/yolo_seg.pt`。
 
 ### 技能1：看看桌上有什么东西
 

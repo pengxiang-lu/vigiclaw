@@ -11,7 +11,7 @@ from openclaw_control.dmp_core import TRAJECTORY_DIR, WEIGHTS_DIR, learn_weights
 
 
 def main():
-    parser = argparse.ArgumentParser(description="从轨迹学习 DMP，权重保存到 skill/weights")
+    parser = argparse.ArgumentParser(description="从轨迹学习 DMP，权重保存到 skill-dmp/weights")
     parser.add_argument("--input", required=True, type=Path, help="采集名称（如 pick），或 .npz/.npy 文件名、路径；名称从 openclaw_control/trajectory 读取")
     parser.add_argument("--n-bfs", type=int, default=100, help="高斯基函数数量，至少 2")
     parser.add_argument("--alpha", type=positive_float, default=25.0)

@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 SERVER_URL = "http://127.0.0.1:8000"
-YOLO_WEIGHTS = Path(__file__).parent / ".." / "weights" / "yolo_seg.pt"
+YOLO_WEIGHTS = Path(__file__).resolve().parents[1] / "assets" / "yolo_seg.pt"
 
 def calculate_iou(box1, box2):
     """计算两个边界框的IoU（交并比）"""

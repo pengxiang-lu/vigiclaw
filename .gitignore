@@ -11,5 +11,7 @@ wheels/
 .agents
 .codex
 # Runtime-generated images
-skill/scripts/detected_images/
-skill/scripts/rgb_images/
+skill-direct/scripts/detected_images/
+skill-direct/scripts/rgb_images/
+skill-dmp/scripts/detected_images/
+skill-dmp/scripts/rgb_images/
